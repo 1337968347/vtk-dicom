@@ -6,10 +6,9 @@ import vtkVolume from '@kitware/vtk.js/Rendering/Core/Volume';
 import vtkVolumeMapper from '@kitware/vtk.js/Rendering/Core/VolumeMapper';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction';
-import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
-import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker';
-import { intersectRayAABB } from '../utils';
+import { intersectRayAABB, convertItkToVtkImage } from '../utils';
+import EraserOverlay from './EraserOverlay.vue';
 
 const THRESHOLDS = [100, 200, 450];
 
@@ -22,8 +21,7 @@ const props = defineProps({
 
 const vtkContainer = ref(null);
 const isEraserEnabled = ref(false);
-const eraserRadius = ref(10);
-const isDragging = ref(false);
+
 
 let genericRenderWindow = null;
 let renderer = null;
@@ -31,32 +29,7 @@ let renderWindow = null;
 let volume = null;
 let mapper = null;
 let picker = null;
-let interactor = null;
 
-// 将 ITK 图像转换为 VTK 图像的辅助函数
-const convertItkToVtkImage = (itkImage) => {
-  const vtkImage = vtkImageData.newInstance();
-  const { size, spacing, origin, direction, data } = itkImage;
-
-  // 设置几何信息
-  vtkImage.setDimensions(size);
-  vtkImage.setSpacing(spacing);
-  vtkImage.setOrigin(origin);
-
-  // 方向
-  if (direction.rows === 3 && direction.columns === 3
-    && direction.data.length === 9) {
-    vtkImage.setDirection(direction.data);
-  }
-  const scalarArray = vtkDataArray.newInstance({
-    name: 'Scalars',
-    values: data,
-    numberOfComponents: itkImage.imageType.components,
-  });
-
-  vtkImage.getPointData().setScalars(scalarArray);
-  return vtkImage;
-};
 
 const initVtk = () => {
   if (!vtkContainer.value) return;
@@ -74,24 +47,11 @@ const initVtk = () => {
   camera.setParallelProjection(true);
 
   renderWindow = genericRenderWindow.getRenderWindow();
-  interactor = genericRenderWindow.getInteractor();
 
   // 初始化拾取器 (Picker)
   picker = vtkCellPicker.newInstance();
   picker.setPickFromList(1);
   picker.setTolerance(0);
-
-  // 绑定交互事件
-  interactor.onRightButtonPress((callData) => {
-    if (isEraserEnabled.value) {
-      isDragging.value = true;
-      handleEraser(callData);
-    }
-  });
-
-  interactor.onRightButtonRelease(() => {
-    isDragging.value = false;
-  });
 
   // 调整大小处理
   const resizeObserver = new ResizeObserver(() => {
@@ -102,32 +62,56 @@ const initVtk = () => {
 
 
 // --------------------------------------------------------------------------------
-// 3D 橡皮擦功能
+// 3D 橡皮擦功能 (通过 Overlay 触发)
 // --------------------------------------------------------------------------------
-const handleEraser = (callData) => {
-  debugger
-  if (!volume || !isEraserEnabled.value) return;
 
-  const { position } = callData;
-  picker.pick([position.x, position.y, 0], renderer);
+const handleEraseEvent = ({ center, radius }) => {
+  if (!volume) return;
+  const view = genericRenderWindow.getInteractor().getView();
+  const dims = view.getViewportSize(renderer); // [width, height]
+  // 关键修正：确保坐标系一致
+  // vtk.js 的 display 坐标系通常原点在左下角，而 DOM (MouseEvent) 在左上角
+  // 此时需要翻转 Y 轴
+  const displayX = center.x;
+  const displayY = dims[1] - center.y; // 翻转 Y 轴
+  picker.pick([displayX, displayY, 0], renderer);
 
-  const pickedPosition = picker.getPickPosition(); // 世界坐标 [x, y, z]
+  const worldPos = picker.getPickPosition(); // 物理坐标
+
+  const displayCenter = genericRenderWindow.getInteractor().getView().worldToDisplay(
+    worldPos[0],
+    worldPos[1],
+    worldPos[2],
+    renderer
+  );
+
+  const displayEdgeX = displayX + radius;
+  const displayEdgeY = displayY;
+
+  // 将屏幕边缘点转回世界坐标 (维持深度不变)
+  // displayToWorld 期望参数: (x, y, z, renderer)
+  const worldEdge = genericRenderWindow.getInteractor().getView().displayToWorld(
+    displayEdgeX,
+    displayEdgeY,
+    displayCenter[2],
+    renderer
+  );
+
+  // 距离
+  const worldRadius = Math.sqrt(
+    Math.pow(worldEdge[0] - worldPos[0], 2) +
+    Math.pow(worldEdge[1] - worldPos[1], 2) +
+    Math.pow(worldEdge[2] - worldPos[2], 2)
+  );
 
   // 获取相机视角方向
   const camera = renderer.getActiveCamera();
   const viewNormal = camera.getDirectionOfProjection(); // [nx, ny, nz]
 
   // 执行圆柱体（隧道）擦除
-  eraseCylinder(pickedPosition, viewNormal, eraserRadius.value);
+  eraseCylinder(worldPos, viewNormal, worldRadius);
 };
 
-
-/**
- * 删除指定方向的圆柱体
- * @param centerWorld 当前视平面的起始点
- * @param direction 视线看向方向
- * @param radius 画的圆半径 （体素单位）
- */
 const eraseCylinder = (centerWorld, direction, radius) => {
   const imageData = volume.getMapper().getInputData();
   // Int32Array
@@ -223,6 +207,7 @@ const eraseCylinder = (centerWorld, direction, radius) => {
   }
 };
 
+// 调整窗宽窗位相关逻辑
 const createTransferFunctions = () => {
   const ctf = vtkColorTransferFunction.newInstance();
   // 背景 & 低于阈值部分 - 黑色/透明
@@ -312,18 +297,19 @@ onBeforeUnmount(() => {
 <template>
   <div class="vtk-viewer-wrapper">
     <div ref="vtkContainer" class="vtk-container"></div>
+
+    <!-- 橡皮擦 Overlay -->
+    <EraserOverlay :enabled="isEraserEnabled" @erase="handleEraseEvent" />
+
     <div class="controls-overlay">
       <div class="control-group">
         <label>
           <input type="checkbox" v-model="isEraserEnabled" />
           启用 3D 橡皮擦
         </label>
-      </div>
-      <div class="control-group" v-if="isEraserEnabled">
-        <label>
-          擦除半径: {{ eraserRadius }} mm
-          <input type="range" v-model.number="eraserRadius" min="1" max="50" step="1" />
-        </label>
+        <small v-if="isEraserEnabled" style="display: block; margin-top: 4px; color: #666;">
+          右键拖拽画圆以擦除
+        </small>
       </div>
     </div>
   </div>

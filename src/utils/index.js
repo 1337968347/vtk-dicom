@@ -1,5 +1,37 @@
+import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
+import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
+
 /**
- * Slab
+ * 将 ITK 图像转换为 VTK 图像的辅助函数
+ * @param {Object} itkImage - ITK 图像对象
+ * @returns {vtkImageData} - VTK 图像数据
+ */
+export const convertItkToVtkImage = (itkImage) => {
+  const vtkImage = vtkImageData.newInstance();
+  const { size, spacing, origin, direction, data } = itkImage;
+
+  // 设置几何信息
+  vtkImage.setDimensions(size);
+  vtkImage.setSpacing(spacing);
+  vtkImage.setOrigin(origin);
+
+  // 方向
+  if (direction.rows === 3 && direction.columns === 3
+    && direction.data.length === 9) {
+    vtkImage.setDirection(direction.data);
+  }
+  const scalarArray = vtkDataArray.newInstance({
+    name: 'Scalars',
+    values: data,
+    numberOfComponents: itkImage.imageType.components,
+  });
+
+  vtkImage.getPointData().setScalars(scalarArray);
+  return vtkImage;
+};
+
+/**
+ * Slab 
  * 计算射线与轴对齐包围盒 (AABB) 的交点
  * @param {Array<number>} p0 - 射线起点 [x, y, z]
  * @param {Array<number>} v - 射线方向向量 [x, y, z] (应归一化)
