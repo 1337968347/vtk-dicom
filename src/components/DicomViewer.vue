@@ -255,7 +255,14 @@ const updateVolume = () => {
   // 光线步进逻辑
   mapper = vtkVolumeMapper.newInstance();
   mapper.setInputData(vtkImage);
-
+  // 固定采样参数，避免初次切换视角时的欠采样发糊
+  const sp = vtkImage.getSpacing();
+  const minSp = Math.min(sp[0], sp[1], sp[2]);
+  mapper.setAutoAdjustSampleDistances(false);
+  mapper.setSampleDistance(minSp * 0.5);
+  if (mapper.setImageSampleDistance) mapper.setImageSampleDistance(0.75);
+  if (mapper.setUseJittering) mapper.setUseJittering(true);
+  
   const scalars = vtkImage.getPointData().getScalars().getData();
   // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
   originScalars = scalars.slice();
@@ -310,15 +317,62 @@ const resetToOriginal = () => {
   renderWindow.render();
 };
 
+const setMedicalView = (type) => {
+  if (!renderer || !volume) return;
+  const camera = renderer.getActiveCamera();
+  const imageData = volume.getMapper().getInputData();
+  const dir = imageData.getDirection ? imageData.getDirection() : null;
+  let iAxis = [1, 0, 0];
+  let jAxis = [0, 1, 0];
+  let kAxis = [0, 0, 1];
+  if (dir && dir.length === 9) {
+    iAxis = [dir[0], dir[3], dir[6]];
+    jAxis = [dir[1], dir[4], dir[7]];
+    kAxis = [dir[2], dir[5], dir[8]];
+  }
+  const b = imageData.getBounds();
+  const center = [(b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2];
+  const dx = b[1] - b[0];
+  const dy = b[3] - b[2];
+  const dz = b[5] - b[4];
+  const d = Math.sqrt(dx * dx + dy * dy + dz * dz) * 0.8;
+  let pos;
+  if (type === 'axial') {
+    pos = [center[0] - kAxis[0] * d, center[1] - kAxis[1] * d, center[2] - kAxis[2] * d];
+    camera.setViewUp(jAxis);
+  } else if (type === 'sagittal') {
+    pos = [center[0] - iAxis[0] * d, center[1] - iAxis[1] * d, center[2] - iAxis[2] * d];
+    camera.setViewUp(kAxis);
+  } else {
+    pos = [center[0] - jAxis[0] * d, center[1] - jAxis[1] * d, center[2] - jAxis[2] * d];
+    camera.setViewUp(kAxis);
+  }
+  camera.setFocalPoint(center[0], center[1], center[2]);
+  camera.setPosition(pos[0], pos[1], pos[2]);
+  renderer.resetCameraClippingRange();
+  if (renderer.updateLightsGeometryToFollowCamera) {
+    renderer.updateLightsGeometryToFollowCamera();
+  }
+  if (mapper && mapper.setImageSampleDistance) mapper.setImageSampleDistance(0.75);
+  if (mapper && mapper.setInteractiveSampleDistance) mapper.setInteractiveSampleDistance(1.5);
+  const interactor = renderWindow.getInteractor && renderWindow.getInteractor();
+  if (interactor && interactor.setAnimationState) interactor.setAnimationState(false);
+  if (typeof requestAnimationFrame !== 'undefined') {
+    requestAnimationFrame(() => renderWindow.render());
+  }
+};
+
 onMounted(() => {
   initVtk();
   if (props.imageData) {
     updateVolume();
+    setTimeout(() => setMedicalView('coronal'), 0);
   }
 });
 
 watch(() => props.imageData, () => {
   updateVolume();
+  setTimeout(() => setMedicalView('coronal'), 0);
 });
 
 onBeforeUnmount(() => {
@@ -347,6 +401,11 @@ onBeforeUnmount(() => {
         </small>
         <button style="margin-top: 8px;" @click="resetToOriginal">重置显示</button>
         <button style="margin-top: 8px; margin-left: 8px;" @click="smoothOnce">高斯平滑一次</button>
+        <div style="margin-top: 8px;">
+          <button @click="setMedicalView('coronal')" style="margin-right: 6px;">前视(冠状)</button>
+          <button @click="setMedicalView('sagittal')" style="margin-right: 6px;">侧视(矢状)</button>
+          <button @click="setMedicalView('axial')">顶视(轴位)</button>
+        </div>
       </div>
     </div>
   </div>
