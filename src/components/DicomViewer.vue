@@ -29,6 +29,8 @@ let renderWindow = null;
 let volume = null;
 let mapper = null;
 let picker = null;
+let maskArray = null;
+let originScalars = null;
 
 
 const initVtk = () => {
@@ -114,11 +116,13 @@ const handleEraseEvent = ({ center, radius }) => {
 
 const eraseCylinder = (centerWorld, direction, radius) => {
   const imageData = volume.getMapper().getInputData();
-  // Int32Array
   const scalars = imageData.getPointData().getScalars().getData();
   const dims = imageData.getDimensions(); // size
   const spacing = imageData.getSpacing();
   const origin = imageData.getOrigin();
+
+  const total = dims[0] * dims[1] * dims[2];
+  if (!maskArray || maskArray.length !== total) maskArray = new Uint8Array(total);
 
   // 当前的射线
   const p0 = centerWorld;
@@ -189,8 +193,9 @@ const eraseCylinder = (centerWorld, direction, radius) => {
 
         if (distSq <= r2) {
           const flatIndex = i + j * dims[0] + k * dims[0] * dims[1];
-          // 命中
-          if (scalars[flatIndex] !== -2000) {
+          if (maskArray[flatIndex] !== 1) {
+            maskArray[flatIndex] = 1;
+            // 命中时直接写渲染标量，避免二次遍历
             scalars[flatIndex] = -2000;
             modified = true;
           }
@@ -200,7 +205,6 @@ const eraseCylinder = (centerWorld, direction, radius) => {
   }
 
   if (modified) {
-    // 关键：通知 vtk 数据已更新
     imageData.getPointData().getScalars().setData(scalars);
     imageData.modified();
     renderWindow.render();
@@ -250,6 +254,11 @@ const updateVolume = () => {
   // 光线步进逻辑
   mapper = vtkVolumeMapper.newInstance();
   mapper.setInputData(vtkImage);
+
+  const scalars = vtkImage.getPointData().getScalars().getData();
+  // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
+  originScalars = scalars.slice();
+  maskArray = new Uint8Array(scalars.length);
 
   // 创建体对象
   volume = vtkVolume.newInstance();
