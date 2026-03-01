@@ -17,20 +17,20 @@ const handleFileChange = async (event) => {
   fileList.value = Array.from(files)
 
   try {
-    console.log(fileList.value)
-    // readImageDICOMFileSeries returns a Promise that resolves to { image, webWorker }
-    // or just { image } depending on version/config, but standard itk-wasm/js pattern
     const { image, webWorker } = await readImageDICOMFileSeries(files)
-
-    if (webWorker) {
-      webWorker.terminate()
-    }
+    
+    // 尝试从 WebWorker 结果中获取更多信息，或者检查 image 对象的其他属性
+    // 注意：readImageDICOMFileSeries 返回的对象结构可能随版本变化
+    console.log('Full Image Object:', image)
+    
+    // 如果 metadata 不在 image 对象上，可能在 webWorker 或者需要单独读取
+    // 某些 itk 版本可能不默认返回完整的 metadata map
 
     emit('loaded', image)
 
   } catch (err) {
     console.error(err)
-    error.value = err.message || 'Failed to parse DICOM series'
+    error.value = err.message || '解析 DICOM 序列失败'
     emit('error', error.value)
   } finally {
     loading.value = false
@@ -42,18 +42,18 @@ const handleFileChange = async (event) => {
   <div class="dicom-upload-container">
     <div class="upload-section">
       <label for="dicom-dir" class="custom-file-upload">
-        Select DICOM Directory
+        选择 DICOM 文件夹
       </label>
       <input id="dicom-dir" type="file" webkitdirectory multiple @change="handleFileChange" />
-      <p v-if="fileList.length">Selected {{ fileList.length }} files</p>
+      <p v-if="fileList.length">已选择 {{ fileList.length }} 个文件</p>
     </div>
 
     <div v-if="loading" class="loading">
-      Processing DICOM files... This may take a moment.
+      正在处理 DICOM 文件... 这可能需要一点时间。
     </div>
 
     <div v-if="error" class="error">
-      Error: {{ error }}
+      错误: {{ error }}
     </div>
   </div>
 </template>

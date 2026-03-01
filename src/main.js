@@ -1,11 +1,13 @@
 import 'regenerator-runtime/runtime'
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import './style.css'
 import App from './App.vue'
+import router from './router'
 
-try {
-  const app = createApp(App)
-  app.mount('#app')
-} catch (e) {
-  console.error('Vue app failed to mount:', e)
-}
+const app = createApp(App)
+
+app.use(createPinia())
+app.use(router)
+
+app.mount('#app')
