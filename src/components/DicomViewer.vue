@@ -284,6 +284,20 @@ const updateVolume = () => {
   renderWindow.render();
 };
 
+const resetToOriginal = () => {
+  if (!volume || !originScalars) return;
+  const imageData = volume.getMapper().getInputData();
+  const scalars = imageData.getPointData().getScalars().getData();
+  if (scalars.length !== originScalars.length) return;
+  for (let i = 0; i < scalars.length; i++) {
+    scalars[i] = originScalars[i];
+  }
+  if (maskArray) maskArray.fill(0);
+  imageData.getPointData().getScalars().setData(scalars);
+  imageData.modified();
+  renderWindow.render();
+};
+
 onMounted(() => {
   initVtk();
   if (props.imageData) {
@@ -319,6 +333,7 @@ onBeforeUnmount(() => {
         <small v-if="isEraserEnabled" style="display: block; margin-top: 4px; color: #666;">
           右键拖拽画圆以擦除
         </small>
+        <button style="margin-top: 8px;" @click="resetToOriginal">重置显示</button>
       </div>
     </div>
   </div>
