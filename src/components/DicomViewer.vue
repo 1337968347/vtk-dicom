@@ -262,6 +262,15 @@ const updateVolume = () => {
   mapper.setSampleDistance(minSp * 0.5);
   if (mapper.setImageSampleDistance) mapper.setImageSampleDistance(0.75);
   if (mapper.setUseJittering) mapper.setUseJittering(true);
+  if (mapper.setMaximumSamplesPerRay) {
+    const bds = vtkImage.getBounds();
+    const dxL = bds[1] - bds[0];
+    const dyL = bds[3] - bds[2];
+    const dzL = bds[5] - bds[4];
+    const diag = Math.sqrt(dxL * dxL + dyL * dyL + dzL * dzL);
+    const steps = Math.ceil(diag / (minSp * 0.5)) + 128;
+    mapper.setMaximumSamplesPerRay(Math.min(Math.max(steps, 1024), 8192));
+  }
   
   const scalars = vtkImage.getPointData().getScalars().getData();
   // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
