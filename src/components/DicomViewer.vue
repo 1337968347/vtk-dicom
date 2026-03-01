@@ -9,6 +9,7 @@ import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunc
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker';
 import { intersectRayAABB, convertItkToVtkImage } from '../utils';
 import EraserOverlay from './EraserOverlay.vue';
+import { gaussianSmoothArray3D } from '../utils';
 
 const THRESHOLDS = [100, 200, 450];
 
@@ -268,8 +269,8 @@ const updateVolume = () => {
   // 开启阴影效果（实现立体感的关键）
   volume.getProperty().setShade(true);
   volume.getProperty().setAmbient(0.2);
-  volume.getProperty().setDiffuse(0.7);
-  volume.getProperty().setSpecular(0.3);
+  volume.getProperty().setDiffuse(0.8);
+  volume.getProperty().setSpecular(0.1);
   volume.getProperty().setSpecularPower(15.0);
 
   // 设置传输函数
@@ -281,6 +282,17 @@ const updateVolume = () => {
 
   renderer.addVolume(volume);
   renderer.resetCamera();
+  renderWindow.render();
+};
+
+const smoothOnce = () => {
+  if (!volume) return;
+  const imageData = volume.getMapper().getInputData();
+  const dims = imageData.getDimensions();
+  const current = imageData.getPointData().getScalars().getData();
+  const smoothed = gaussianSmoothArray3D(current, dims, { sigma: 0.8 });
+  imageData.getPointData().getScalars().setData(smoothed);
+  imageData.modified();
   renderWindow.render();
 };
 
@@ -334,6 +346,7 @@ onBeforeUnmount(() => {
           右键拖拽画圆以擦除
         </small>
         <button style="margin-top: 8px;" @click="resetToOriginal">重置显示</button>
+        <button style="margin-top: 8px; margin-left: 8px;" @click="smoothOnce">高斯平滑一次</button>
       </div>
     </div>
   </div>

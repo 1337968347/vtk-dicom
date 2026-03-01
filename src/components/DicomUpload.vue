@@ -17,7 +17,7 @@ const handleFileChange = async (event) => {
   fileList.value = Array.from(files)
 
   try {
-    const { image, webWorker } = await readImageDICOMFileSeries(files)
+    const { image } = await readImageDICOMFileSeries(files)
     
     // 尝试从 WebWorker 结果中获取更多信息，或者检查 image 对象的其他属性
     // 注意：readImageDICOMFileSeries 返回的对象结构可能随版本变化
