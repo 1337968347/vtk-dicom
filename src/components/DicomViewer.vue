@@ -41,6 +41,7 @@ const initVtk = () => {
   genericRenderWindow = vtkGenericRenderWindow.newInstance({
     background: [0, 0, 0],
   });
+  console.log('创建了webglcontext');
   genericRenderWindow.setContainer(vtkContainer.value);
 
 
@@ -59,15 +60,16 @@ const initVtk = () => {
 
   // 调整大小处理
   const resizeObserver = new ResizeObserver(() => {
-    // 限制渲染分辨率， 
+    // 限制渲染分辨率
     if (genericRenderWindow && vtkContainer.value) {
       const { width, height } = vtkContainer.value.getBoundingClientRect();
+
       const renderWindow = genericRenderWindow.getRenderWindow();
       if (renderWindow) {
+
         const views = renderWindow.getViews();
         if (views && views.length > 0) {
           const openglRenderWindow = views[0];
-          // 限制高分辨率上的渲染压力
           openglRenderWindow.setSize(Math.floor(width), Math.floor(height));
           renderWindow.render();
         }
@@ -220,7 +222,6 @@ const eraseCylinder = (centerWorld, direction, radius) => {
 
   if (modified) {
     imageData.getPointData().getScalars().setData(scalars);
-    imageData.modified();
     renderWindow.render();
   }
 };
@@ -292,7 +293,7 @@ const updateVolume = () => {
     const steps = Math.ceil(diag / (minSp * 0.5)) + 128;
     mapper.setMaximumSamplesPerRay(Math.min(Math.max(steps, 1024), 8192));
   }
-  
+
   const scalars = vtkImage.getPointData().getScalars().getData();
   // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
   originScalars = scalars.slice();
@@ -329,7 +330,6 @@ const smoothOnce = () => {
   const current = imageData.getPointData().getScalars().getData();
   const smoothed = gaussianSmoothArray3D(current, dims, { sigma: 0.8 });
   imageData.getPointData().getScalars().setData(smoothed);
-  imageData.modified();
   renderWindow.render();
 };
 
@@ -343,7 +343,6 @@ const resetToOriginal = () => {
   }
   if (maskArray) maskArray.fill(0);
   imageData.getPointData().getScalars().setData(scalars);
-  imageData.modified();
   renderWindow.render();
 };
 
@@ -407,9 +406,37 @@ watch(() => props.imageData, () => {
 });
 
 onBeforeUnmount(() => {
+  console.log("unMount")
   if (genericRenderWindow) {
+    // 确保正确删除 renderWindow 和其关联的资源
+    const renderWindow = genericRenderWindow.getRenderWindow();
+    if (renderWindow) {
+      const views = renderWindow.getViews();
+      if (views) {
+        views.forEach((view) => {
+          if (view.setContainer) view.setContainer(null);
+        });
+      }
+    }
     genericRenderWindow.delete();
     genericRenderWindow = null;
+  }
+
+  if (renderer) {
+    renderer.delete();
+    renderer = null;
+  }
+  if (volume) {
+    volume.delete();
+    volume = null;
+  }
+  if (mapper) {
+    mapper.delete();
+    mapper = null;
+  }
+  if (picker) {
+    picker.delete();
+    picker = null;
   }
 });
 </script>
