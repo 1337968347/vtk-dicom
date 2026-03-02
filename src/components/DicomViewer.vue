@@ -347,10 +347,11 @@ const setMedicalView = (type) => {
   const d = Math.sqrt(dx * dx + dy * dy + dz * dz) * 0.8;
   let pos;
   if (type === 'axial') {
-    pos = [center[0] - kAxis[0] * d, center[1] - kAxis[1] * d, center[2] - kAxis[2] * d];
-    camera.setViewUp(jAxis);
+    // 在中心点的上边
+    pos = [center[0] + kAxis[0] * d, center[1] + kAxis[1] * d, center[2] + kAxis[2] * d];
+    camera.setViewUp([-jAxis[0], -jAxis[1], -jAxis[2]]);
   } else if (type === 'sagittal') {
-    pos = [center[0] - iAxis[0] * d, center[1] - iAxis[1] * d, center[2] - iAxis[2] * d];
+    pos = [center[0] + iAxis[0] * d, center[1] + iAxis[1] * d, center[2] + iAxis[2] * d];
     camera.setViewUp(kAxis);
   } else {
     pos = [center[0] - jAxis[0] * d, center[1] - jAxis[1] * d, center[2] - jAxis[2] * d];
