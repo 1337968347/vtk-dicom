@@ -33,7 +33,7 @@ const getMousePos = (e) => {
 };
 
 const handleMouseDown = (e) => {
-  if (!props.enabled || e.button !== 2) return; // 仅响应右键
+  if (!props.enabled || e.button !== 0) return; // 仅响应左键
 
   e.preventDefault();
   isDrawing.value = true;
