@@ -43,6 +43,7 @@ const initVtk = () => {
   });
   genericRenderWindow.setContainer(vtkContainer.value);
 
+
   renderer = genericRenderWindow.getRenderer();
 
   // 切换为正交投影 
@@ -58,7 +59,20 @@ const initVtk = () => {
 
   // 调整大小处理
   const resizeObserver = new ResizeObserver(() => {
-    genericRenderWindow.resize();
+    // 限制渲染分辨率， 
+    if (genericRenderWindow && vtkContainer.value) {
+      const { width, height } = vtkContainer.value.getBoundingClientRect();
+      const renderWindow = genericRenderWindow.getRenderWindow();
+      if (renderWindow) {
+        const views = renderWindow.getViews();
+        if (views && views.length > 0) {
+          const openglRenderWindow = views[0];
+          // 限制高分辨率上的渲染压力
+          openglRenderWindow.setSize(Math.floor(width), Math.floor(height));
+          renderWindow.render();
+        }
+      }
+    }
   });
   resizeObserver.observe(vtkContainer.value);
 };
@@ -71,12 +85,11 @@ const initVtk = () => {
 const handleEraseEvent = ({ center, radius }) => {
   if (!volume) return;
   const view = genericRenderWindow.getInteractor().getView();
-  const dims = view.getViewportSize(renderer); // [width, height]
-  // 关键修正：确保坐标系一致
-  // vtk.js 的 display 坐标系通常原点在左下角，而 DOM (MouseEvent) 在左上角
-  // 此时需要翻转 Y 轴
+  const containerRect = vtkContainer.value.getBoundingClientRect();
+  const height = containerRect.height;
   const displayX = center.x;
-  const displayY = dims[1] - center.y; // 翻转 Y 轴
+  const displayY = height - center.y; // 翻转 Y 轴，使用容器 CSS 高度
+
   picker.pick([displayX, displayY, 0], renderer);
 
   const worldPos = picker.getPickPosition(); // 物理坐标
@@ -243,10 +256,18 @@ const createTransferFunctions = () => {
 
 const updateVolume = () => {
   if (!props.imageData || !renderer) return;
-
   // 清理之前的体数据
   if (volume) {
     renderer.removeVolume(volume);
+    volume.delete();
+    volume = null;
+  }
+  if (mapper) {
+    mapper.delete();
+    mapper = null;
+  }
+  if (maskArray) {
+    maskArray = null; // 释放旧 mask
   }
 
   const vtkImage = convertItkToVtkImage(props.imageData);

@@ -20,9 +20,16 @@ export const convertItkToVtkImage = (itkImage) => {
     && direction.data.length === 9) {
     vtkImage.setDirection(direction.data);
   }
+
+  let scalarsData = data;
+  if (data instanceof Int32Array) {
+    // 医学图像绝大多数情况都在 Int16 范围内
+    scalarsData = new Int16Array(data);
+  }
+
   const scalarArray = vtkDataArray.newInstance({
     name: 'Scalars',
-    values: data,
+    values: scalarsData,
     numberOfComponents: itkImage.imageType.components,
   });
 
@@ -142,14 +149,21 @@ export const gaussianSmoothArray3D = (values, dims, opts = {}) => {
   const sigma = opts.sigma != null ? opts.sigma : 0.8;
   const radius = opts.radius != null ? opts.radius : Math.max(1, Math.ceil(sigma * 3));
   const n = dims[0] * dims[1] * dims[2];
-  const src = new Float32Array(n);
-  for (let i = 0; i < n; i++) src[i] = values[i];
-  const tmp1 = new Float32Array(n);
-  const tmp2 = new Float32Array(n);
+
+  // 优化：使用双缓冲 (Ping-Pong) 减少内存占用，避免同时分配 3 个大数组
+  // 512*512*769 * 4bytes * 3 ≈ 2.4GB -> 1.6GB (减少 800MB)
+  const buf1 = new Float32Array(n);
+  const buf2 = new Float32Array(n);
+  
+  // 初始化 buf1
+  for (let i = 0; i < n; i++) buf1[i] = values[i];
+
   const { k, r } = makeGaussianKernel1D(sigma, radius);
   const nx = dims[0];
   const ny = dims[1];
   const nz = dims[2];
+
+  // X pass: buf1 -> buf2
   for (let z = 0; z < nz; z++) {
     const zoff = z * nx * ny;
     for (let y = 0; y < ny; y++) {
@@ -160,12 +174,14 @@ export const gaussianSmoothArray3D = (values, dims, opts = {}) => {
           let xx = x + i;
           if (xx < 0) xx = 0;
           if (xx >= nx) xx = nx - 1;
-          acc += src[base + xx] * k[i + r];
+          acc += buf1[base + xx] * k[i + r];
         }
-        tmp1[base + x] = acc;
+        buf2[base + x] = acc;
       }
     }
   }
+
+  // Y pass: buf2 -> buf1
   for (let z = 0; z < nz; z++) {
     const zoff = z * nx * ny;
     for (let y = 0; y < ny; y++) {
@@ -175,12 +191,14 @@ export const gaussianSmoothArray3D = (values, dims, opts = {}) => {
           let yy = y + i;
           if (yy < 0) yy = 0;
           if (yy >= ny) yy = ny - 1;
-          acc += tmp1[zoff + yy * nx + x] * k[i + r];
+          acc += buf2[zoff + yy * nx + x] * k[i + r];
         }
-        tmp2[zoff + y * nx + x] = acc;
+        buf1[zoff + y * nx + x] = acc;
       }
     }
   }
+
+  // Z pass: buf1 -> buf2
   for (let z = 0; z < nz; z++) {
     for (let y = 0; y < ny; y++) {
       const base = y * nx;
@@ -190,18 +208,19 @@ export const gaussianSmoothArray3D = (values, dims, opts = {}) => {
           let zz = z + i;
           if (zz < 0) zz = 0;
           if (zz >= nz) zz = nz - 1;
-          acc += tmp2[zz * nx * ny + base + x] * k[i + r];
+          acc += buf1[zz * nx * ny + base + x] * k[i + r];
         }
-        src[z * nx * ny + base + x] = acc;
+        buf2[z * nx * ny + base + x] = acc;
       }
     }
   }
+
   const T = values.constructor;
   const out = new T(n);
   if (T === Int8Array || T === Uint8Array || T === Int16Array || T === Uint16Array || T === Int32Array || T === Uint32Array) {
-    for (let i = 0; i < n; i++) out[i] = Math.round(src[i]);
+    for (let i = 0; i < n; i++) out[i] = Math.round(buf2[i]);
   } else {
-    for (let i = 0; i < n; i++) out[i] = src[i];
+    for (let i = 0; i < n; i++) out[i] = buf2[i];
   }
   return out;
 };
