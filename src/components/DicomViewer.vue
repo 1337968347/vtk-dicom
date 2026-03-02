@@ -221,7 +221,10 @@ const eraseCylinder = (centerWorld, direction, radius) => {
   }
 
   if (modified) {
-    imageData.getPointData().getScalars().setData(scalars);
+    // 触发数据更新
+    imageData.getPointData().getScalars().modified();
+    imageData.modified();
+    
     renderWindow.render();
   }
 };

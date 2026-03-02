@@ -4,15 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "start": "vite",
+    "dev": "vite --host",
+    "start": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
-    "@kitware/vtk.js": "^35.2.0",
+    "@kitware/vtk.js": "^34.16.3",
     "itk": "^14.1.1",
     "pinia": "^3.0.4",
     "regenerator-runtime": "^0.14.1",
