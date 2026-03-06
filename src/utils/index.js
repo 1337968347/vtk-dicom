@@ -1,38 +1,46 @@
 import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData';
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 
+// 全局单例存储 DICOM 图像数据
+export const globalDicomData = {
+  image: null
+};
+
 /**
  * 将 ITK 图像转换为 VTK 图像的辅助函数
  * @param {Object} itkImage - ITK 图像对象
  * @returns {vtkImageData} - VTK 图像数据
  */
-export const convertItkToVtkImage = (itkImage) => {
+export const convertItkToVtkImage = () => {
   const vtkImage = vtkImageData.newInstance();
-  const { size, spacing, origin, direction, data } = itkImage;
+  const itkImage = globalDicomData.image;
 
   // 设置几何信息
-  vtkImage.setDimensions(size);
-  vtkImage.setSpacing(spacing);
-  vtkImage.setOrigin(origin);
+  vtkImage.setDimensions([itkImage.size[0], itkImage.size[1], itkImage.size[2]]);
+  vtkImage.setSpacing([itkImage.spacing[0], itkImage.spacing[1], itkImage.spacing[2]]);
+  vtkImage.setOrigin([itkImage.origin[0], itkImage.origin[1], itkImage.origin[2]]);
 
   // 方向
-  if (direction.rows === 3 && direction.columns === 3
-    && direction.data.length === 9) {
-    vtkImage.setDirection(direction.data);
+  if (itkImage.direction.rows === 3 && itkImage.direction.columns === 3
+    && itkImage.direction.data.length === 9) {
+    vtkImage.setDirection([...itkImage.direction.data]);
   }
 
-  let scalarsData = data;
-  if (data instanceof Int32Array) {
+  let scalarsData = itkImage.data;
+  if (scalarsData instanceof Int32Array) {
     // 医学图像绝大多数情况都在 Int16 范围内
-    scalarsData = new Int16Array(data);
+    scalarsData = new Int16Array(itkImage.data);
   }
+
+  // 释放 itkImage 对 data 的引用，避免内存双重占用
+  itkImage.data = null;
 
   const scalarArray = vtkDataArray.newInstance({
     name: 'Scalars',
     values: scalarsData,
     numberOfComponents: itkImage.imageType.components,
   });
-
+  scalarsData = null;
   vtkImage.getPointData().setScalars(scalarArray);
   return vtkImage;
 };
@@ -69,7 +77,7 @@ export const intersectRayAABB = (p0, v, bounds) => {
   }
 
   if (tRange[0] > tRange[1]) return null;
-  
+
   return tRange;
 };
 
@@ -154,7 +162,7 @@ export const gaussianSmoothArray3D = (values, dims, opts = {}) => {
   // 512*512*769 * 4bytes * 3 ≈ 2.4GB -> 1.6GB (减少 800MB)
   const buf1 = new Float32Array(n);
   const buf2 = new Float32Array(n);
-  
+
   // 初始化 buf1
   for (let i = 0; i < n; i++) buf1[i] = values[i];
 

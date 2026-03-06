@@ -1,19 +1,17 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { useDicomStore } from '../stores/dicom'
 import DicomUpload from '../components/DicomUpload.vue'
+import { globalDicomData } from '../utils'
 
 const router = useRouter()
-const store = useDicomStore()
 
 const handleDicomLoaded = (image) => {
-  store.setDicomData(image)
   router.push('/viewer')
 }
 
 const handleError = (err) => {
   console.error('DICOM Error:', err)
-  store.clearData()
+  globalDicomData.image = null
 }
 </script>
 

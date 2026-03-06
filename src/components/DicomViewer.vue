@@ -7,18 +7,10 @@ import vtkVolumeMapper from '@kitware/vtk.js/Rendering/Core/VolumeMapper';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction';
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker';
-import { intersectRayAABB, convertItkToVtkImage } from '../utils';
 import EraserOverlay from './EraserOverlay.vue';
-import { gaussianSmoothArray3D } from '../utils';
+import { gaussianSmoothArray3D, convertItkToVtkImage, intersectRayAABB } from '../utils';
 
 const THRESHOLDS = [100, 200, 450];
-
-const props = defineProps({
-  imageData: {
-    type: Object,
-    default: null,
-  },
-});
 
 const vtkContainer = ref(null);
 const isEraserEnabled = ref(false);
@@ -30,7 +22,6 @@ let renderWindow = null;
 let volume = null;
 let mapper = null;
 let picker = null;
-let maskArray = null;
 let originScalars = null;
 
 
@@ -138,7 +129,6 @@ const eraseCylinder = (centerWorld, direction, radius) => {
   const origin = imageData.getOrigin();
 
   const total = dims[0] * dims[1] * dims[2];
-  if (!maskArray || maskArray.length !== total) maskArray = new Uint8Array(total);
 
   // 当前的射线
   const p0 = centerWorld;
@@ -209,9 +199,8 @@ const eraseCylinder = (centerWorld, direction, radius) => {
 
         if (distSq <= r2) {
           const flatIndex = i + j * dims[0] + k * dims[0] * dims[1];
-          if (maskArray[flatIndex] !== 1) {
-            maskArray[flatIndex] = 1;
-            // 命中时直接写渲染标量，避免二次遍历
+          // 直接检查当前值是否已经是擦除值，避免 maskArray 内存占用
+          if (scalars[flatIndex] !== -2000) {
             scalars[flatIndex] = -2000;
             modified = true;
           }
@@ -224,7 +213,7 @@ const eraseCylinder = (centerWorld, direction, radius) => {
     // 触发数据更新
     imageData.getPointData().getScalars().modified();
     imageData.modified();
-    
+
     renderWindow.render();
   }
 };
@@ -259,7 +248,7 @@ const createTransferFunctions = () => {
 };
 
 const updateVolume = () => {
-  if (!props.imageData || !renderer) return;
+  if (!renderer) return;
   // 清理之前的体数据
   if (volume) {
     renderer.removeVolume(volume);
@@ -270,12 +259,7 @@ const updateVolume = () => {
     mapper.delete();
     mapper = null;
   }
-  if (maskArray) {
-    maskArray = null; // 释放旧 mask
-  }
-
-  const vtkImage = convertItkToVtkImage(props.imageData);
-
+  const vtkImage = convertItkToVtkImage();
   // 创建映射器
   // 光线步进逻辑
   mapper = vtkVolumeMapper.newInstance();
@@ -300,7 +284,6 @@ const updateVolume = () => {
   const scalars = vtkImage.getPointData().getScalars().getData();
   // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
   originScalars = scalars.slice();
-  maskArray = new Uint8Array(scalars.length);
 
   // 创建体对象
   volume = vtkVolume.newInstance();
@@ -344,7 +327,6 @@ const resetToOriginal = () => {
   for (let i = 0; i < scalars.length; i++) {
     scalars[i] = originScalars[i];
   }
-  if (maskArray) maskArray.fill(0);
   imageData.getPointData().getScalars().setData(scalars);
   renderWindow.render();
 };
@@ -397,13 +379,6 @@ const setMedicalView = (type) => {
 
 onMounted(() => {
   initVtk();
-  if (props.imageData) {
-    updateVolume();
-    setTimeout(() => setMedicalView('coronal'), 0);
-  }
-});
-
-watch(() => props.imageData, () => {
   updateVolume();
   setTimeout(() => setMedicalView('coronal'), 0);
 });

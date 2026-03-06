@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import readImageDICOMFileSeries from 'itk/readImageDICOMFileSeries'
+import { globalDicomData } from '../utils'
 
 const emit = defineEmits(['loaded', 'error'])
 
@@ -18,15 +19,9 @@ const handleFileChange = async (event) => {
 
   try {
     const { image } = await readImageDICOMFileSeries(files)
-    
-    // 尝试从 WebWorker 结果中获取更多信息，或者检查 image 对象的其他属性
-    // 注意：readImageDICOMFileSeries 返回的对象结构可能随版本变化
-    console.log('Full Image Object:', image)
-    
-    // 如果 metadata 不在 image 对象上，可能在 webWorker 或者需要单独读取
-    // 某些 itk 版本可能不默认返回完整的 metadata map
+    globalDicomData.image = image
 
-    emit('loaded', image)
+    emit('loaded', null)
 
   } catch (err) {
     console.error(err)
