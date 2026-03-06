@@ -1,13 +1,21 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import readImageDICOMFileSeries from 'itk/readImageDICOMFileSeries'
-import { globalDicomData } from '../utils'
+import { globalDicomData, convertItkToVtkImage, getGPUInfo } from '../utils'
 
 const emit = defineEmits(['loaded', 'error'])
 
 const loading = ref(false)
 const error = ref(null)
 const fileList = ref([])
+const gpuInfo = ref({ vendor: '', renderer: '' })
+const forceDownsample = ref(false)
+
+onMounted(() => {
+  gpuInfo.value = getGPUInfo();
+  // 默认不勾选，由用户自己决定
+  forceDownsample.value = false;
+})
 
 const handleFileChange = async (event) => {
   const files = event.target.files
@@ -18,8 +26,24 @@ const handleFileChange = async (event) => {
   fileList.value = Array.from(files)
 
   try {
-    const { image } = await readImageDICOMFileSeries(files)
-    globalDicomData.image = image
+    const { image: itkImage } = await readImageDICOMFileSeries(files)
+    
+    // 存储原始信息供 ViewerView 使用
+    globalDicomData.seriesInfo = {
+      imageType: itkImage.imageType,
+      name: itkImage.name,
+      origin: itkImage.origin,
+      spacing: itkImage.spacing,
+      direction: itkImage.direction,
+      size: itkImage.size,
+      metadata: itkImage.metadata
+    };
+
+    // 立即转换为 VTK ImageData 并降采样（如果需要）
+    const vtkImage = convertItkToVtkImage(itkImage, forceDownsample.value);
+    
+    // 直接存储 vtkImageData
+    globalDicomData.image = vtkImage;
 
     emit('loaded', null)
 
@@ -41,6 +65,15 @@ const handleFileChange = async (event) => {
       </label>
       <input id="dicom-dir" type="file" webkitdirectory multiple @change="handleFileChange" />
       <p v-if="fileList.length">已选择 {{ fileList.length }} 个文件</p>
+    </div>
+    
+    <!-- 显卡信息与设置 -->
+    <div class="gpu-info-panel">
+      <p><strong>检测到的显卡:</strong> {{ gpuInfo.renderer }}</p>
+      <label class="checkbox-label">
+        <input type="checkbox" v-model="forceDownsample"> 
+        强制开启 Z 轴降采样 (节省 50% 显存，防止崩溃，如果是核显建议开启)
+      </label>
     </div>
 
     <div v-if="loading" class="loading">
@@ -71,6 +104,26 @@ const handleFileChange = async (event) => {
   background-color: #f9f9f9;
   width: 100%;
   max-width: 600px;
+}
+
+.gpu-info-panel {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  background-color: #fff;
+  width: 100%;
+  max-width: 600px;
+  font-size: 0.9rem;
+}
+
+.warning-text { color: #e67e22; }
+.success-text { color: #27ae60; }
+.checkbox-label {
+  display: block;
+  margin-top: 8px;
+  cursor: pointer;
+  user-select: none;
 }
 
 input[type="file"] {

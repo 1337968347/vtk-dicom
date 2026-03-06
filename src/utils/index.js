@@ -3,17 +3,45 @@ import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 
 // 全局单例存储 DICOM 图像数据
 export const globalDicomData = {
-  image: null
+  image: null,
+  seriesInfo: null // 新增：用于存储原始 DICOM 序列信息（因为 image 现在存的是 vtkImageData）
 };
 
 /**
  * 将 ITK 图像转换为 VTK 图像的辅助函数
  * @param {Object} itkImage - ITK 图像对象
+ * @param {Boolean} forceDownsample - 是否强制降采样
  * @returns {vtkImageData} - VTK 图像数据
  */
-export const convertItkToVtkImage = () => {
+/**
+ * 获取 GPU 显存信息的辅助函数
+ * 尝试通过 WebGL 扩展获取显卡信息
+ */
+export const getGPUInfo = () => {
+  try {
+    const canvas = document.createElement('canvas');
+    // 关键修改：添加 powerPreference: 'high-performance' 参数
+    // 这会提示浏览器优先使用独立显卡
+    const gl = canvas.getContext('webgl', { powerPreference: 'high-performance' }) || 
+               canvas.getContext('experimental-webgl', { powerPreference: 'high-performance' });
+    if (!gl) return { vendor: 'unknown', renderer: 'unknown' };
+
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+      const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+      return { vendor, renderer };
+    }
+  } catch (e) {
+    console.warn('GPU Info check failed:', e);
+  }
+  return { vendor: 'unknown', renderer: 'unknown' };
+};
+
+
+export const convertItkToVtkImage = (itkImage, forceDownsample = false) => {
   const vtkImage = vtkImageData.newInstance();
-  const itkImage = globalDicomData.image;
+
 
   // 设置几何信息
   vtkImage.setDimensions([itkImage.size[0], itkImage.size[1], itkImage.size[2]]);
@@ -27,9 +55,39 @@ export const convertItkToVtkImage = () => {
   }
 
   let scalarsData = itkImage.data;
-  if (scalarsData instanceof Int32Array) {
-    // 医学图像绝大多数情况都在 Int16 范围内
-    scalarsData = new Int16Array(itkImage.data);
+
+
+
+  if (forceDownsample) {
+    // 执行 Z 轴 1/2 降采样
+    const oldZ = itkImage.size[2];
+    const newZ = Math.floor(oldZ / 2);
+    const sliceSize = itkImage.size[0] * itkImage.size[1];
+    
+    // 创建新缓冲区
+    const newScalars = new Int16Array(sliceSize * newZ);
+    
+    // 隔层采样 (0, 2, 4...)
+    for (let z = 0; z < newZ; z++) {
+      const srcOffset = (z * 2) * sliceSize;
+      const dstOffset = z * sliceSize;
+      // 拷贝一层
+      newScalars.set(itkImage.data.subarray(srcOffset, srcOffset + sliceSize), dstOffset);
+    }
+    
+    scalarsData = newScalars;
+    
+    // 更新 Z 轴维度和 Spacing
+    vtkImage.setDimensions([itkImage.size[0], itkImage.size[1], newZ]);
+    vtkImage.setSpacing([itkImage.spacing[0], itkImage.spacing[1], itkImage.spacing[2] * 2]);
+    
+    // 释放原始大数组
+    itkImage.data = null; 
+  } else {
+    if (scalarsData instanceof Int32Array) {
+      // 医学图像绝大多数情况都在 Int16 范围内
+      scalarsData = new Int16Array(itkImage.data);
+    }
   }
 
   // 释放 itkImage 对 data 的引用，避免内存双重占用

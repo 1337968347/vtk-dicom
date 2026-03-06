@@ -8,7 +8,7 @@ import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransf
 import vtkPiecewiseFunction from '@kitware/vtk.js/Common/DataModel/PiecewiseFunction';
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker';
 import EraserOverlay from './EraserOverlay.vue';
-import { gaussianSmoothArray3D, convertItkToVtkImage, intersectRayAABB } from '../utils';
+import { gaussianSmoothArray3D, intersectRayAABB, globalDicomData } from '../utils';
 
 const THRESHOLDS = [100, 200, 450];
 
@@ -210,11 +210,15 @@ const eraseCylinder = (centerWorld, direction, radius) => {
   }
 
   if (modified) {
+    // vtk.js 对象通过 closures 封装状态，直接打印对象只能看到方法。
+    // 调用 .get() 可以获取当前内部状态的快照。
+    console.log('Volume Property State:', volume.getProperty().get());
+    console.log('Volume Mapper State:', volume.getMapper().get());
     // 触发数据更新
     imageData.getPointData().getScalars().modified();
     imageData.modified();
-
     renderWindow.render();
+
   }
 };
 
@@ -259,7 +263,13 @@ const updateVolume = () => {
     mapper.delete();
     mapper = null;
   }
-  const vtkImage = convertItkToVtkImage();
+  
+  // 直接使用全局存储的 vtkImageData，不再进行重复转换
+  const vtkImage = globalDicomData.image;
+  if (!vtkImage) {
+    return;
+  }
+  
   // 创建映射器
   // 光线步进逻辑
   mapper = vtkVolumeMapper.newInstance();
@@ -283,7 +293,7 @@ const updateVolume = () => {
 
   const scalars = vtkImage.getPointData().getScalars().getData();
   // 备份原始 CT 数据（只读备份，用于按需恢复可见体素值）
-  originScalars = scalars.slice();
+  originScalars = scalars.slice(); 
 
   // 创建体对象
   volume = vtkVolume.newInstance();
@@ -327,7 +337,8 @@ const resetToOriginal = () => {
   for (let i = 0; i < scalars.length; i++) {
     scalars[i] = originScalars[i];
   }
-  imageData.getPointData().getScalars().setData(scalars);
+  imageData.getPointData().getScalars().modified();
+  imageData.modified();
   renderWindow.render();
 };
 

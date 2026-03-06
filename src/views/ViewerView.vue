@@ -17,16 +17,9 @@ onMounted(() => {
     router.push('/')
     return
   }
-  const image = globalDicomData.image;
-  seriesInfo.value = {
-    imageType: image.imageType,
-    name: image.name,
-    origin: image.origin,
-    spacing: image.spacing,
-    direction: image.direction,
-    size: image.size,
-    metadata: image.metadata
-  }
+  // 使用之前在 DicomUpload 中保存的原始信息
+  const image = globalDicomData.seriesInfo;
+  seriesInfo.value = image;
 })
 </script>
 
